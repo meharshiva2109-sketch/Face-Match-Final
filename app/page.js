@@ -247,14 +247,12 @@ export default function Home() {
       if (!scriptLoaded || !window.Razorpay) throw new Error('Razorpay checkout could not be loaded.');
       const createRes = await fetch('/api/create-order', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventSlug: EVENT_SLUG, selectedPhotoIds: selected, groupPhotoIds: selected.filter((id) => Number(livePhotos.find((p) => p.id === id)?.people_count || 1) > 1) }),
+        body: JSON.stringify({ eventSlug: EVENT_SLUG, selectedPhotoIds: selected }),
       });
       const createBody = await createRes.json();
       if (!createRes.ok) throw new Error(createBody.error || 'Could not create payment order.');
-      if (!createBody.key_id) throw new Error('Razorpay key configuration is missing.');
       const options = {
-        key: createBody.key_id,
-        one_click_checkout: false,
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
         amount: createBody.amount, currency: createBody.currency,
         name: 'SMF Studios',
         description: `${selected.length} event photo${selected.length === 1 ? '' : 's'}`,
@@ -265,7 +263,7 @@ export default function Home() {
             const verifyRes = await fetch('/api/verify-payment', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                eventSlug: EVENT_SLUG, selectedPhotoIds: selected, groupPhotoIds: selected.filter((id) => Number(livePhotos.find((p) => p.id === id)?.people_count || 1) > 1),
+                eventSlug: EVENT_SLUG, selectedPhotoIds: selected,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_signature: response.razorpay_signature,
@@ -298,31 +296,6 @@ export default function Home() {
       setMatchMessage(error?.message || 'Could not start Razorpay checkout.');
     }
   };
-
-  useEffect(() => {
-    if (!orderId || !paymentSent || downloadStarted) return undefined;
-    let cancelled = false;
-    let timer;
-    const check = async () => {
-      try {
-        const res = await fetch(`/api/orders/${orderId}/status`, { cache: 'no-store' });
-        const body = await res.json();
-        const status = body.order?.status;
-        if (cancelled) return;
-        if (status === 'approved' || status === 'fulfilled') {
-          await downloadApprovedPhotos(orderId);
-          return;
-        }
-        if (status === 'rejected') {
-          setMatchMessage('Payment was not approved. Please contact the event photographer.');
-          return;
-        }
-      } catch {}
-      if (!cancelled) timer = setTimeout(check, 5000);
-    };
-    check();
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [orderId, paymentSent, downloadStarted, selected]);
 
   const displayPhotos = matched && photos.length ? photos.filter((p) => !p.no_match) : livePhotos;
   const eventName = event?.name || 'SAM College · 14 September 2026';
